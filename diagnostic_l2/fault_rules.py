@@ -1,6 +1,11 @@
 def run_rules(snapshot):
     # placeholder
-    return {
-        "fault": "bearing_outer_race",
-        "confidence": 0.92
+    return [
+    {
+        "fault_type": "bearing",
+        "severity": "HIGH",
+        "confidence": 0.9,
+        "recommendation": "Inspect bearing lubrication & alignment",
     }
+]
+

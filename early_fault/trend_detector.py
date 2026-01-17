@@ -13,13 +13,25 @@ class TrendDetector:
     def update(self, asset, point, features):
         key = (asset, point)
 
+        # ============================
+        # DEFENSIVE GUARD (MANDATORY)
+        # ============================
+        if "acc_hf_rms_g" not in features:
+            return TrendResult(
+                level="NORMAL",
+                score=0.0,
+                dominant_feature=None,
+            )
+
         hist = self._history.setdefault(key, [])
         hist.append(features)
 
         if len(hist) > self.history_size:
             hist.pop(0)
 
-        # ---- VERY SIMPLE TREND LOGIC (LOCKED VERSION) ----
+        # ============================
+        # TREND SCORE (RAW DOMAIN)
+        # ============================
         score = abs(features["acc_hf_rms_g"])
 
         if score < 0.05:
@@ -29,7 +41,10 @@ class TrendDetector:
         else:
             level = "WARNING"
 
-        dominant_feature = max(features, key=lambda k: abs(features[k]))
+        dominant_feature = max(
+            features,
+            key=lambda k: abs(features[k])
+        )
 
         return TrendResult(
             level=level,

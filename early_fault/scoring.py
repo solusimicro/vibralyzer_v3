@@ -16,7 +16,14 @@ class EarlyFaultResult:
         self.dominant_feature = dominant_feature
         self.timestamp = time.time()
 
-
+    def to_dict(self):
+        return {
+            "state": self.state,
+            "confidence": self.confidence,
+            "dominant_feature": self.dominant_feature,
+            "timestamp": self.timestamp,
+        }
+ 
 class EarlyFaultFSM:
     def __init__(
         self,

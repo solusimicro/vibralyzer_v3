@@ -1,32 +1,31 @@
 # diagnostic_l2/diagnostic_engine.py
 
-from diagnostic_l2.fault_rules import FAULT_RULES
+import time
 
 
 class DiagnosticEngine:
-    def diagnose(self, features: dict, state: str):
-        """
-        Return standardized fault_type
-        """
-        for rule in FAULT_RULES:
-            if rule["severity"] != state:
-                continue
+    """
+    L2 Diagnostic Engine
+    Responsibility:
+    - Interpret early fault event
+    - Normalize fault_state
+    - Produce standardized L2 result
+    """
 
-            match = True
-            for feat, cond in rule["conditions"].items():
-                if feat not in features:
-                    match = False
-                    break
+    def run(self, asset: str, point: str, early_fault_event):
+        fault_state = str(
+            getattr(early_fault_event, "state", "UNKNOWN")
+        )
 
-                value = features[feat]
-                if cond == ">" and value <= 0:
-                    match = False
-                if cond == "<" and value >= 5:
-                    match = False
+        confidence = float(
+            getattr(early_fault_event, "confidence", 0.0)
+        )
 
-            if match:
-                return rule["fault_type"]
-
-        return "GENERAL_HEALTH"
-
+        return {
+            "asset": asset,
+            "point": point,
+            "fault_state": fault_state,
+            "confidence": round(confidence, 3),
+            "timestamp": time.time(),
+        }
 

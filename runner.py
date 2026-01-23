@@ -1,3 +1,6 @@
+
+
+
 import time
 
 from raw_ingest.mqtt_listener import start_mqtt_listener
@@ -16,7 +19,7 @@ from diagnostic_l2.cooldown import L2CooldownManager
 from diagnostic_l2.l2_queue import L2JobQueue
 from diagnostic_l2.worker import l2_worker
 
-from analytics.recommendation.rule_text import RecommendationEngine
+from analytics.recommendation.recommendation_engine import RecommendationEngine
 from utils.heartbeat import Heartbeat
 
 
@@ -27,7 +30,7 @@ def main():
     config = load_config()
 
     # =========================
-    # RECOMMENDATION ENGINE
+    # RECOMMENDATION ENGINE (UNIFIED)
     # =========================
     recommendation_engine = RecommendationEngine()
 
@@ -137,17 +140,12 @@ def main():
         )
 
         fault_type = early_fault.dominant_feature or "GENERAL_HEALTH"
+        state = early_fault.state.value
 
-        # ---- RECOMMENDATION TEXT ----
-        recommendation_en = recommendation_engine.get_text(
+        # ---- UNIFIED RECOMMENDATION ----
+        recommendation = recommendation_engine.recommend(
             fault_type=fault_type,
-            state=early_fault.state.value,
-            lang="en",
-        )
-
-        recommendation_id = recommendation_engine.get_text(
-            fault_type=fault_type,
-            state=early_fault.state.value,
+            state=state,
             lang="id",
         )
 
@@ -168,14 +166,13 @@ def main():
             "temperature_c": raw_payload.get("temperature"),
 
             # --- FSM ---
-            "early_fault": early_fault.state.value in ("WARNING", "ALARM"),
-            "state": early_fault.state.value,
+            "early_fault": state in ("WARNING", "ALARM"),
+            "state": state,
             "confidence": early_fault.confidence,
             "fault_type": fault_type,
 
-            # --- RECOMMENDATION ---
-            "recommendation_en": recommendation_en,
-            "recommendation_id": recommendation_id,
+            # --- RECOMMENDATION (OBJECT) ---
+            "recommendation": recommendation,
 
             "timestamp": time.time(),
         }
@@ -184,24 +181,32 @@ def main():
         publisher.publish_scada(asset_id, point, scada_payload)
 
         # ---- EARLY FAULT EVENT ----
-        publisher.publish_early_fault(asset_id, point, {
-            "asset": asset_id,
-            "point": point,
-            "state": early_fault.state.value,
-            "confidence": early_fault.confidence,
-            "fault_type": fault_type,
-            "timestamp": early_fault.timestamp,
-        })
+        publisher.publish_early_fault(
+            asset_id,
+            point,
+            {
+                "asset": asset_id,
+                "point": point,
+                "state": state,
+                "confidence": early_fault.confidence,
+                "fault_type": fault_type,
+                "timestamp": early_fault.timestamp,
+            },
+        )
 
         # ---- L2 TRIGGER ----
-        if config["l2"]["enable"] and early_fault.state.value in ("WARNING", "ALARM"):
-            if l2_cooldown.can_trigger(asset_id, point, early_fault.state.value):
+        if config["l2"]["enable"] and state in ("WARNING", "ALARM"):
+            if l2_cooldown.can_trigger(asset_id, point, state):
                 job = {
                     "asset": asset_id,
                     "point": point,
                     "window": window,
                     "l1_snapshot": l1_snapshot,
-                    "early_fault_event": early_fault,
+                    "early_fault_event": {
+                        "state": state,
+                        "fault_type": fault_type,
+                        "confidence": early_fault.confidence,
+                    },
                     "publisher": publisher,
                 }
                 if l2_queue.enqueue(job):
@@ -227,6 +232,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

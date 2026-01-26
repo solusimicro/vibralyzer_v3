@@ -1,23 +1,32 @@
 import time
+import traceback
 from diagnostic_l2.diagnostic_engine import DiagnosticEngine
 
 
 def l2_worker(job):
+    engine = DiagnosticEngine()
+
     try:
-        engine = DiagnosticEngine()
+        # === SINGLE SOURCE OF INPUT ===
+        l1_snapshot = job["l1_snapshot"]
 
-        window = job["window"]
-        fs = job["l1_snapshot"].get("features", {}).get("fs")
-        rpm = job["l1_snapshot"].get("features", {}).get("rpm")
-
-        result = engine.run(window, fs, rpm)
+        result = engine.run(l1_snapshot)
 
         payload = {
             "asset": job["asset"],
             "point": job["point"],
+
+            # --- DIAGNOSTIC RESULT ---
             "fault_type": result.get("fault_type"),
-            "confidence": result.get("confidence"),
-            "evidence": result.get("evidence", {}),
+            "confidence": round(result.get("confidence", 0.0), 2),
+
+            # --- EVIDENCE (LOCKED SCHEMA) ---
+            "evidence": {
+                "dominant_feature": result.get("dominant_feature"),
+                "rules_triggered": result.get("rules_triggered", []),
+                "metrics": result.get("metrics", {}),
+            },
+
             "timestamp": time.time(),
         }
 
@@ -29,17 +38,19 @@ def l2_worker(job):
 
     except Exception:
         print("❌ L2 worker failed")
-        import traceback
         traceback.print_exc()
 
+        fail_payload = {
+            "asset": job["asset"],
+            "point": job["point"],
+            "fault_type": None,
+            "confidence": 0.0,
+            "evidence": {},
+            "timestamp": time.time(),
+        }
 
         job["publisher"].publish_l2_result(
             job["asset"],
             job["point"],
-            payload,
+            fail_payload,
         )
-
-    except Exception:
-        print("❌ L2 worker failed")
-        import traceback
-        traceback.print_exc()

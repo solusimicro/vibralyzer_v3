@@ -46,7 +46,12 @@ class MQTTPublisher:
         """
         topic = f"vibration/health_alarm/{asset}/{point}"
         self.client.publish(topic, json.dumps(payload))
-
+    # =========================    
+    # RECOMMENDATION OUTPUT
+    # =========================
+    def publish_recommendation(self, asset, point, payload: dict):
+        topic = f"vibration/recommendation/{asset}/{point}"
+        self.client.publish(topic, json.dumps(payload))
     # =========================
     # SYSTEM HEARTBEAT
     # =========================

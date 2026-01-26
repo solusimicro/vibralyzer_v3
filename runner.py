@@ -206,16 +206,27 @@ def main():
             "fault_type": fault_type,
             "confidence": early_fault.confidence,
             "fsm_state": early_fault.state.value,
-
-            # --- RECOMMENDATION ---
-            "recommendation": recommendation,
-
-            "timestamp": time.time(),
         }
-
         # ---- PUBLISH SCADA ----
         publisher.publish_scada(asset_id, point, scada_payload)
-
+        
+        # --- RECOMMENDATION ---
+        publisher.publish_recommendation(
+            asset_id,
+            point,
+            {
+                "asset": asset_id,
+                "point": point,
+                "state": state,
+                "fault_type": fault_type,
+                "rec_level": recommendation.get("level"),
+                "rec_priority": recommendation.get("priority"),
+                "rec_action_code": recommendation.get("action_code"),
+                "rec_text": recommendation.get("text"),
+                "timestamp": time.time(),
+            }
+        )
+               
         # ---- EARLY FAULT EVENT ----
         publisher.publish_early_fault(
             asset_id,

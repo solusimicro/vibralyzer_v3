@@ -209,25 +209,8 @@ def main():
         }
         # ---- PUBLISH SCADA ----
         publisher.publish_scada(asset_id, point, scada_payload)
-        
-        # --- RECOMMENDATION ---
-        publisher.publish_recommendation(
-            asset_id,
-            point,
-            {
-                "asset": asset_id,
-                "point": point,
-                "state": state,
-                "fault_type": fault_type,
-                "rec_level": recommendation.get("level"),
-                "rec_priority": recommendation.get("priority"),
-                "rec_action_code": recommendation.get("action_code"),
-                "rec_text": recommendation.get("text"),
-                "timestamp": time.time(),
-            }
-        )
-               
-        # ---- EARLY FAULT EVENT ----
+       
+       # ---- EARLY FAULT EVENT ----
         publisher.publish_early_fault(
             asset_id,
             point,
@@ -277,7 +260,24 @@ def main():
                 if l2_queue.enqueue(job):
                     heartbeat.mark_l2_exec()
                     l2_cooldown.mark_triggered(asset_id, point)
-
+        
+        # --- RECOMMENDATION ---
+        publisher.publish_recommendation(
+            asset_id,
+            point,
+            {
+                "asset": asset_id,
+                "point": point,
+                "state": state,
+                "fault_type": fault_type,
+                "rec_level": recommendation.get("level"),
+                "rec_priority": recommendation.get("priority"),
+                "rec_action_code": recommendation.get("action_code"),
+                "rec_text": recommendation.get("text"),
+                "timestamp": time.time(),
+            }
+        )
+           
         # ---- HEARTBEAT ----
         now = time.time()
         if now - last_heartbeat_ts >= HEARTBEAT_INTERVAL:

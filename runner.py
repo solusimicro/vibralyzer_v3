@@ -16,6 +16,7 @@ from diagnostic_l2.cooldown import L2CooldownManager
 from diagnostic_l2.l2_queue import L2JobQueue
 from diagnostic_l2.worker import l2_worker
 
+from analytics.interpretation.interpretation_engine import InterpretationEngine
 from analytics.recommendation.recommendation_engine import RecommendationEngine
 from utils.heartbeat import Heartbeat
 
@@ -51,6 +52,11 @@ def main():
     # LOAD CONFIG
     # =========================
     config = load_config()
+    
+    # =========================
+    # INTERPRETATION ENGINE
+    # =========================
+    interpretation_engine = InterpretationEngine()
 
     # =========================
     # RECOMMENDATION ENGINE (UNIFIED)
@@ -170,6 +176,17 @@ def main():
             fault_type = "GENERAL_HEALTH"
         else:
             fault_type = early_fault.dominant_feature or "GENERAL_HEALTH"
+        
+        # ---- INTERPRETATION ----    
+        interpretation = interpretation_engine.interpret(
+            asset=asset_id,
+            point=point,
+            l1_features=l1_features,
+            trend=raw_trend,
+            early_fault=early_fault,
+            phi=point_health_index,
+            state=state,
+        )
 
         # ---- UNIFIED RECOMMENDATION ----
         recommendation = recommendation_engine.recommend(
@@ -235,6 +252,13 @@ def main():
                 "point_health_index": point_health_index,
                 "timestamp": time.time(),
             },
+        )
+
+        # ---- INTERPRETATION ----
+        publisher.publish_interpretation(
+            asset_id,
+            point,
+            interpretation
         )
 
         # ---- L2 TRIGGER ----

@@ -54,6 +54,13 @@ class MQTTPublisher:
         topic = f"vibration/early_fault/{asset}/{point}"
         self._publish(topic, payload)
 
+    # =========================
+    # INTERPRETATION (ENGINEER)
+    # =========================
+    def publish_interpretation(self, asset, point, payload: dict):
+        topic = f"vibration/interpretation/{asset}/{point}"
+        self.client.publish(topic, json.dumps(payload))
+        
     # ==================================================
     # L2 DIAGNOSTIC (ROOT CAUSE)
     # ==================================================

@@ -20,6 +20,10 @@ from analytics.interpretation.interpretation_engine import InterpretationEngine
 from analytics.recommendation.recommendation_engine import RecommendationEngine
 from utils.heartbeat import Heartbeat
 
+
+# ==================================================
+# PHI → STATE (FINAL AUTHORITY)
+# ==================================================
 def phi_to_state(phi: float) -> str:
     if phi >= 90:
         return "NORMAL"
@@ -30,37 +34,31 @@ def phi_to_state(phi: float) -> str:
     else:
         return "ALARM"
 
-def compute_point_health_index(l1_features):
-    """
-    Point Health Index (0–100)
-    Deterministic, physics-based, SCADA-safe
-    """
 
+# ==================================================
+# POINT HEALTH INDEX (PHYSICS-BASED)
+# ==================================================
+def compute_point_health_index(l1_features):
     vel = min(l1_features["overall_vel_rms_mm_s"] / 7.1, 1.0)
     env = min(l1_features["envelope_rms"] / 0.35, 1.0)
     crest = min(l1_features["crest_factor"] / 6.0, 1.0)
 
     severity = 0.5 * vel + 0.3 * env + 0.2 * crest
-
-    # 100 = healthy, 0 = worst
     phi = 100.0 * (1.0 - severity)
 
     return round(max(min(phi, 100.0), 0.0), 1)
+
 
 def main():
     # =========================
     # LOAD CONFIG
     # =========================
     config = load_config()
-    
-    # =========================
-    # INTERPRETATION ENGINE
-    # =========================
-    interpretation_engine = InterpretationEngine()
 
     # =========================
-    # RECOMMENDATION ENGINE (UNIFIED)
+    # ENGINES
     # =========================
+    interpretation_engine = InterpretationEngine()
     recommendation_engine = RecommendationEngine()
 
     # =========================
@@ -122,7 +120,6 @@ def main():
     def on_raw_data(asset_id, point, raw_payload):
         nonlocal last_heartbeat_ts
 
-        # ---- RAW RX ----
         heartbeat.mark_raw_rx()
         ring_buffers.append(asset_id, point, raw_payload)
 
@@ -130,25 +127,13 @@ def main():
             return
 
         heartbeat.mark_window_ready()
-
-        # ---- WINDOW ----
         window = ring_buffers.get_window(asset_id, point)
 
-        # ---- L1 FEATURES ----
         heartbeat.mark_l1_exec()
         l1_features = l1_pipeline.compute(window)
 
-        l1_snapshot = {
-            "asset": asset_id,
-            "point": point,
-            "features": l1_features,
-            "timestamp": time.time(),
-        }
-
-        # ---- TREND ----
         raw_trend = trend_detector.update(asset_id, point, l1_features)
 
-        # ---- BASELINE ----
         baseline.update(
             asset_id,
             point,
@@ -156,10 +141,8 @@ def main():
             allow_update=(raw_trend.level == "NORMAL"),
         )
 
-        # ---- PERSISTENCE ----
         persistence = persistence_checker.update(asset_id, point, raw_trend)
 
-        # ---- EARLY FAULT FSM (INTERNAL EVIDENCE) ----
         early_fault = early_fault_fsm.update(
             asset=asset_id,
             point=point,
@@ -167,125 +150,86 @@ def main():
             persistence=persistence,
         )
 
-        # ---- POINT HEALTH INDEX (FINAL DECISION) ----
-        point_health_index = compute_point_health_index(l1_features)
-        state = phi_to_state(point_health_index)
+        # =========================
+        # FINAL HEALTH DECISION
+        # =========================
+        phi = compute_point_health_index(l1_features)
+        state = phi_to_state(phi)
 
-        # ---- FAULT TYPE RESOLUTION ----
-        if state in ("NORMAL", "WATCH"):
-            fault_type = "GENERAL_HEALTH"
-        else:
-            fault_type = early_fault.dominant_feature or "GENERAL_HEALTH"
-        
-        # ---- INTERPRETATION ----    
+        fault_type = (
+            "GENERAL_HEALTH"
+            if state in ("NORMAL", "WATCH")
+            else early_fault.dominant_feature or "GENERAL_HEALTH"
+        )
+
+        # =========================
+        # INTERPRETATION (WHY)
+        # =========================
         interpretation = interpretation_engine.interpret(
             asset=asset_id,
             point=point,
             l1_features=l1_features,
             trend=raw_trend,
             early_fault=early_fault,
-            phi=point_health_index,
+            phi=phi,
             state=state,
         )
 
-        # ---- UNIFIED RECOMMENDATION ----
+        # =========================
+        # RECOMMENDATION (WHAT TO DO)
+        # =========================
         recommendation = recommendation_engine.recommend(
             fault_type=fault_type,
             state=state,
             lang="id",
         )
 
-        # ---- SCADA SNAPSHOT ----
-        scada_payload = {
-            "asset": asset_id,
-            "point": point,
-
-            # --- FEATURES ---
-            "acceleration_rms_g": l1_features["acc_rms_g"],
-            "acc_peak_g": l1_features["acc_peak_g"],
-            "acc_hf_rms_g": l1_features["acc_hf_rms_g"],
-            "crest_factor": l1_features["crest_factor"],
-            "envelope_rms": l1_features["envelope_rms"],
-            "overall_vel_rms_mm_s": l1_features["overall_vel_rms_mm_s"],
-
-            # --- EXT ---
-            "temperature_c": raw_payload.get("temperature"),
-            
-            # --- SUPPORTING FEATURES ---
-            "energy_low": l1_features["energy_low"],
-            "energy_high": l1_features["energy_high"],
-
-            # --- FINAL HEALTH ---
-            "point_health_index": point_health_index,
-            "state": state,   # 🔴 ONLY FROM PHI
-
-            # --- CONTEXT (ENGINEER ONLY) ---
-            "fault_type": fault_type,
-            "confidence": early_fault.confidence,
-            "fsm_state": early_fault.state.value,
-        }
-        # ---- PUBLISH SCADA ----
-        publisher.publish_scada(asset_id, point, scada_payload)
-       
-       # ---- EARLY FAULT EVENT ----
-        publisher.publish_early_fault(
+        # =========================
+        # 1️⃣ SCADA (VALUES ONLY)
+        # =========================
+        publisher.publish_scada(
             asset_id,
             point,
             {
                 "asset": asset_id,
                 "point": point,
-                "fsm_state": early_fault.state.value,
-                "confidence": early_fault.confidence,
-                "fault_type": fault_type,
-                "timestamp": early_fault.timestamp,
+                "acceleration_rms_g": l1_features["acc_rms_g"],
+                "acc_peak_g": l1_features["acc_peak_g"],
+                "acc_hf_rms_g": l1_features["acc_hf_rms_g"],
+                "crest_factor": l1_features["crest_factor"],
+                "envelope_rms": l1_features["envelope_rms"],
+                "overall_vel_rms_mm_s": l1_features["overall_vel_rms_mm_s"],
+                "energy_low": l1_features["energy_low"],
+                "energy_high": l1_features["energy_high"],
+                "temperature_c": raw_payload.get("temperature"),
+                "point_health_index": phi,
+                "state": state,
             },
         )
-        
-        # ---- FINAL HEALTH ALARM ----
+
+        # =========================
+        # 2️⃣ FINAL HEALTH ALARM
+        # =========================
         publisher.publish_health_alarm(
             asset_id,
             point,
             {
                 "asset": asset_id,
                 "point": point,
-                "state": state,  # PHI-based
-                "point_health_index": point_health_index,
+                "state": state,
+                "point_health_index": phi,
                 "timestamp": time.time(),
             },
         )
 
-        # ---- INTERPRETATION ----
-        publisher.publish_interpretation(
-            asset_id,
-            point,
-            interpretation
-        )
+        # =========================
+        # 3️⃣ INTERPRETATION (WHY)
+        # =========================
+        publisher.publish_interpretation(asset_id, point, interpretation)
 
-        # ---- L2 TRIGGER ----
-        if config["l2"]["enable"] and state in ("WARNING", "ALARM"):
-            if l2_cooldown.can_trigger(asset_id, point, state):
-                job = {
-                    "asset": asset_id,
-                    "point": point,
-                    "window": window,
-                    "l1_snapshot": l1_snapshot,
-                    "early_fault_event": {
-                        "fsm_state": early_fault.state.value,
-                        "fault_type": fault_type,
-                        "confidence": early_fault.confidence,
-                    },
-                    "health_event": {
-                        "state": state,  # PHI-based
-                        "point_health_index": point_health_index,
-                    },
-
-                    "publisher": publisher,
-                }
-                if l2_queue.enqueue(job):
-                    heartbeat.mark_l2_exec()
-                    l2_cooldown.mark_triggered(asset_id, point)
-        
-        # --- RECOMMENDATION ---
+        # =========================
+        # 4️⃣ RECOMMENDATION (WHAT)
+        # =========================
         publisher.publish_recommendation(
             asset_id,
             point,
@@ -299,18 +243,57 @@ def main():
                 "rec_action_code": recommendation.get("action_code"),
                 "rec_text": recommendation.get("text"),
                 "timestamp": time.time(),
-            }
+            },
         )
-           
-        # ---- HEARTBEAT ----
+
+        # =========================
+        # 5️⃣ EARLY FAULT (EVIDENCE)
+        # =========================
+        publisher.publish_early_fault(
+            asset_id,
+            point,
+            {
+                "asset": asset_id,
+                "point": point,
+                "fsm_state": early_fault.state.value,
+                "confidence": early_fault.confidence,
+                "fault_type": fault_type,
+                "timestamp": early_fault.timestamp,
+            },
+        )
+
+        # =========================
+        # L2 TRIGGER
+        # =========================
+        if config["l2"]["enable"] and state in ("WARNING", "ALARM"):
+            if l2_cooldown.can_trigger(asset_id, point, state):
+                l2_queue.enqueue(
+                    {
+                        "asset": asset_id,
+                        "point": point,
+                        "window": window,
+                        "early_fault_event": {
+                            "fsm_state": early_fault.state.value,
+                            "fault_type": fault_type,
+                            "confidence": early_fault.confidence,
+                        },
+                        "health_event": {
+                            "state": state,
+                            "point_health_index": phi,
+                        },
+                        "publisher": publisher,
+                    }
+                )
+                l2_cooldown.mark_triggered(asset_id, point)
+
+        # =========================
+        # HEARTBEAT
+        # =========================
         now = time.time()
         if now - last_heartbeat_ts >= HEARTBEAT_INTERVAL:
             publisher.publish_heartbeat(heartbeat.snapshot())
             last_heartbeat_ts = now
 
-    # =========================
-    # START MQTT LISTENER
-    # =========================
     start_mqtt_listener(
         callback=on_raw_data,
         broker=config["mqtt"]["broker"],
@@ -321,8 +304,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# NOTE:
-# FSM is NOT allowed to set SCADA alarm state.
-# FSM provides evidence only.
-# Final alarm/state MUST be derived from Point Health Index (PHI).

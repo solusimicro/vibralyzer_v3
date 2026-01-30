@@ -1,0 +1,33 @@
+version: 1.0
+type: runtime_contract
+owner: platform
+
+output_schema:
+  asset: string
+  point: string
+
+  interpretation:
+    summary: string
+    suspected_faults:
+      - string
+    suspected_component: string
+
+    supporting_features:
+      - name: string
+        value: number
+        unit: string
+        trend: string
+
+    reasoning:
+      - string
+
+    confidence: number
+
+  context:
+    phi: number
+    state: string
+    fsm_state: string
+    dominant_feature: string
+
+  timestamp: unix_epoch
+# ## END OF FILE

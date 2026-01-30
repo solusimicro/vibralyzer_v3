@@ -1,0 +1,19 @@
+BEARING_DEFECT:
+  component: Bearing
+  tasks:
+    CHECK_LUBRICATION:
+      code: MT-BRG-001
+      description: Check bearing lubrication condition
+    INSPECT_BEARING:
+      code: MT-BRG-002
+      description: Inspect bearing clearance and vibration
+    REPLACE_BEARING:
+      code: MT-BRG-003
+      description: Replace bearing assembly
+
+UNBALANCE:
+  component: Rotor
+  tasks:
+    BALANCE_CHECK:
+      code: MT-ROT-001
+      description: Perform rotor balance check

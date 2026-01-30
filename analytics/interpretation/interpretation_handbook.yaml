@@ -1,0 +1,85 @@
+version: 1.0
+domain: rotating_equipment_vibration
+
+#===========================================================================
+# Feature definitions for interpretation
+#===========================================================================
+features:
+  energy_high:
+    description: High-frequency vibration energy
+    unit: g2
+    domain: bearing
+    typical_faults:
+      - bearing_outer_race
+      - bearing_inner_race
+      - lubrication_issue
+
+  energy_low:
+    description: Low-frequency vibration energy
+    unit: g2
+    domain: structural
+    typical_faults:
+      - misalignment
+      - looseness
+      - soft_foot
+
+  envelope_rms:
+    description: Bearing demodulated vibration level
+    unit: g
+    domain: bearing
+
+  crest_factor:
+    description: Impulsiveness indicator
+    unit: ratio
+    domain: impact
+
+  overall_vel_rms_mm_s:
+    description: Overall vibration severity
+    unit: mm/s
+    domain: general_health
+
+#===========================================================================
+# Fault definitions for interpretation
+#===========================================================================
+
+faults:
+  bearing_outer_race:
+    label: Bearing Outer Race Defect
+    component: bearing
+    severity_driver: energy_high
+    supporting_features:
+      - envelope_rms
+      - crest_factor
+    summary:
+      id: Kerusakan race luar bearing terindikasi dari dominasi energi frekuensi tinggi.
+      en: Outer race bearing defect indicated by high-frequency vibration energy.
+
+  lubrication_issue:
+    label: Poor Lubrication
+    component: bearing
+    severity_driver: energy_high
+    supporting_features:
+      - envelope_rms
+    summary:
+      id: Indikasi pelumasan buruk yang memicu peningkatan getaran frekuensi tinggi.
+      en: Poor lubrication causing elevated high-frequency vibration.
+
+  misalignment:
+    label: Shaft Misalignment
+    component: shaft
+    severity_driver: energy_low
+    supporting_features:
+      - overall_vel_rms_mm_s
+    summary:
+      id: Ketidaksejajaran poros terindikasi oleh energi frekuensi rendah.
+      en: Shaft misalignment indicated by low-frequency vibration energy.
+#===========================================================================
+# EVidence rules to support fault severity assessment
+#===========================================================================
+evidence_rules:
+  energy_high:
+    require_trend: WARNING
+    min_confidence: 0.6
+
+  envelope_rms:
+    require_trend: WATCH
